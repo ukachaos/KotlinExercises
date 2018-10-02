@@ -7,19 +7,24 @@ import android.view.View
 import android.widget.Button
 import android.widget.Toast
 import com.google.firebase.analytics.FirebaseAnalytics
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ValueEventListener
 import kotlinx.android.synthetic.main.activity_main.*
+import java.lang.Exception
 import java.util.*
+import kotlin.collections.HashMap
 
 class MainActivity : AppCompatActivity() {
 
-    private var mFirebaseAnalytics:FirebaseAnalytics?=null
+    private var mFirebaseAnalytics: FirebaseAnalytics? = null
 
     private var mDatabase = FirebaseDatabase.getInstance()
 
     private var myRef = mDatabase.reference
 
-    var mEmail:String?=null
+    var mEmail: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,6 +33,8 @@ class MainActivity : AppCompatActivity() {
         mFirebaseAnalytics = FirebaseAnalytics.getInstance(this)
 
         mEmail = intent.extras.getString("email")
+
+        incomingCalls()
     }
 
     fun buClick(view: View) {
@@ -49,7 +56,9 @@ class MainActivity : AppCompatActivity() {
 
         //Toast.makeText(this, "ID : $cellId", Toast.LENGTH_LONG).show()
 
-        PlayGame(cellId, buSelected)
+//        PlayGame(cellId, buSelected)
+
+        myRef.child("PlayerOnline").child(sessionID).child(cellId.toString()).setValue(mEmail)
     }
 
     var Player1 = ArrayList<Int>()
@@ -64,7 +73,6 @@ class MainActivity : AppCompatActivity() {
             Player1.add(cellID)
             activePlayer = 2
 
-            autoPlay()
         } else {
             buSelected.text = "O"
             buSelected.setBackgroundColor(Color.BLUE)
@@ -131,42 +139,117 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun autoPlay(){
-        var emptyList = ArrayList<Int>()
-        for(cellID in 1..9){
-            if(!Player1.contains(cellID) || Player2.contains(cellID))
-                emptyList.add(cellID)
-        }
+    fun autoPlay(cellID: Int) {
 
-        val r = Random()
-        val randomIndex = r.nextInt(emptyList.size - 0) + 0
-
-        val cellID = emptyList.get(randomIndex)
-
-        var buSelected:Button?
-        when(cellID){
-            1->buSelected = bu1
-            2->buSelected = bu2
-            3->buSelected = bu3
-            4->buSelected = bu4
-            5->buSelected = bu5
-            6->buSelected = bu6
-            7->buSelected = bu7
-            8->buSelected = bu8
-            9->buSelected = bu9
-            else->buSelected = bu1
+        var buSelected: Button?
+        when (cellID) {
+            1 -> buSelected = bu1
+            2 -> buSelected = bu2
+            3 -> buSelected = bu3
+            4 -> buSelected = bu4
+            5 -> buSelected = bu5
+            6 -> buSelected = bu6
+            7 -> buSelected = bu7
+            8 -> buSelected = bu8
+            9 -> buSelected = bu9
+            else -> buSelected = bu1
         }
 
         PlayGame(cellID, buSelected)
     }
 
-    fun onButtonRequest(view:View){
+    fun onButtonRequest(view: View) {
         var email = etEmail.text.toString()
 
-        myRef.child("Users").child(email).child("Request").push().setValue(mEmail)
+        myRef.child("Users").child(splitString(email)).child("Request").push().setValue(mEmail)
+
+        playerOnline(splitString(mEmail!!) + splitString(email))
+
+        playerSymbol = "X"
     }
 
-    fun onButtonAccept(view:View){
+    fun onButtonAccept(view: View) {
         var email = etEmail.text.toString()
+        myRef.child("Users").child(splitString(email)).child("Request").push().setValue(mEmail)
+
+        playerOnline(splitString(email) + splitString(mEmail!!))
+
+        playerSymbol = "O"
+    }
+
+    var number = 0
+    fun incomingCalls() {
+        myRef.child("Users").child(splitString(mEmail!!)).child("Request")
+                .addValueEventListener(object : ValueEventListener {
+                    override fun onCancelled(p0: DatabaseError?) {
+                    }
+
+                    override fun onDataChange(dataSnapshot: DataSnapshot?) {
+                        try {
+                            var td = dataSnapshot!!.value as HashMap<String, Any>
+                            if (td != null) {
+                                var value: String
+                                for (key in td.keys) {
+                                    value = td[key] as String
+                                    etEmail.setText(value)
+
+                                    val notifyMe = Notifications()
+                                    notifyMe.Notify(applicationContext, value + "wants to play!", number)
+                                    number++
+
+                                    myRef.child("Users").child(splitString(mEmail!!)).child("Request").setValue(true)
+                                    break
+                                }
+                            }
+                        } catch (ex: Exception) {
+                            ex.printStackTrace()
+                        }
+                    }
+
+                })
+    }
+
+    fun splitString(str: String): String {
+        var split = str.split("@")
+        return split[0]
+    }
+
+    var sessionID: String? = null
+    var playerSymbol: String? = null
+
+    fun playerOnline(sessionID: String) {
+        this.sessionID = sessionID
+
+        myRef.child("PlayerOnline").removeValue()
+
+        myRef.child("PlayerOnline").child(sessionID)
+                .addValueEventListener(object : ValueEventListener {
+                    override fun onCancelled(p0: DatabaseError?) {
+                    }
+
+                    override fun onDataChange(dataSnapshot: DataSnapshot?) {
+                        Player1.clear()
+                        Player2.clear()
+                        try {
+                            var td = dataSnapshot!!.value as HashMap<String, Any>
+                            if (td != null) {
+                                var value: String
+                                for (key in td.keys) {
+                                    value = td[key] as String
+                                    if (value != mEmail) {
+                                        activePlayer = if (playerSymbol.equals("X")) 1 else 2
+                                    } else {
+                                        activePlayer = if (playerSymbol.equals("X")) 2 else 1
+                                    }
+
+                                    autoPlay(key.toInt())
+                                }
+                            }
+                        } catch (ex: Exception) {
+                            ex.printStackTrace()
+                        }
+                    }
+
+                })
     }
 }
